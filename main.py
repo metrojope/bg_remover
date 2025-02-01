@@ -13,11 +13,26 @@ def remove_background(input_image):
 
 # Function to load an image from a local path or URL
 def load_image_from_path(path):
-    if path.startswith('http://') or path.startswith('https://'):
-        response = requests.get(path)
-        return Image.open(BytesIO(response.content))
-    else:
-        return Image.open(path)
+    try:
+        if path.startswith('http://') or path.startswith('https://'):
+            response = requests.get(path)
+            response.raise_for_status()  # Raise an HTTPError for bad responses
+            return Image.open(BytesIO(response.content))
+        else:
+            # Check if the file exists and is accessible
+            if not os.path.exists(path):
+                raise FileNotFoundError(f"File not found: {path}")
+            if not os.access(path, os.R_OK):
+                raise PermissionError(f"Permission denied: {path}")
+            return Image.open(path)
+    except requests.exceptions.RequestException as e:
+        raise Exception(f"Error downloading image from URL: {e}")
+    except FileNotFoundError as fnfe:
+        raise Exception(f"File not found: {fnfe}")
+    except PermissionError as pe:
+        raise Exception(f"Permission denied: {pe}")
+    except Exception as e:
+        raise Exception(f"Error loading image: {e}")
 
 # Function to handle the background removal and preview
 def on_remove_background(event=None):
@@ -40,27 +55,37 @@ def on_remove_background(event=None):
         output_label.image = output_photo
 
         download_button.config(state=tk.NORMAL)
-
-        # Clear the search bars
-        local_entry.delete(0, tk.END)
-        url_entry.delete(0, tk.END)
     except Exception as e:
         messagebox.showerror("Error", str(e))
 
 # Function to handle the download of the image with the background removed
 def on_download():
     input_path = local_entry.get() or url_entry.get()
-    desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
     base_name = os.path.basename(input_path)
     name, ext = os.path.splitext(base_name)
     output_name = f"{name}_nobg.png"
-    output_path = os.path.join(desktop_path, output_name)
+
+    # Ask the user to select a save directory
+    save_directory = filedialog.askdirectory()
+    if not save_directory:
+        messagebox.showerror("Error", "Please select a directory to save the file")
+        return
+
+    output_path = os.path.join(save_directory, output_name)
 
     try:
         input_image = load_image_from_path(input_path)
         output_image = remove_background(input_image)
         output_image.save(output_path)
         messagebox.showinfo("Success", f"Image with removed background saved to {output_path}")
+
+        # Clear the search bars after successful download
+        local_entry.delete(0, tk.END)
+        url_entry.delete(0, tk.END)
+    except PermissionError as pe:
+        messagebox.showerror("Permission Error", f"Permission denied: {pe}")
+    except FileNotFoundError as fnfe:
+        messagebox.showerror("File Not Found Error", f"File not found: {fnfe}")
     except Exception as e:
         messagebox.showerror("Error", str(e))
 
@@ -75,7 +100,7 @@ root = tk.Tk()
 root.title("Background Remover")
 
 # Set a fixed size for the window
-root.geometry("800x700")
+root.geometry("800x600")
 
 # Create a frame for the input fields and buttons
 frame = tk.Frame(root)
